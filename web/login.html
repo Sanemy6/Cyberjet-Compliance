@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <script>
+    (function () {
+      var pref = localStorage.getItem('theme') || 'auto';
+      var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Connexion — Conformité</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231a6dd4'/><path d='M16 7l7 3v6c0 4.4-2.9 8.2-7 9.4-4.1-1.2-7-5-7-9.4v-6l7-3z' fill='white'/></svg>">
+</head>
+<body class="auth-body">
+  <div class="auth-shell">
+    <div class="card auth-card">
+      <div class="card-body">
+        <div class="auth-brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.5 20 6v6.2c0 5-3.3 9.4-8 10.8-4.7-1.4-8-5.8-8-10.8V6l8-3.5Z" fill="currentColor" opacity=".18"/><path d="M12 2.5 20 6v6.2c0 5-3.3 9.4-8 10.8-4.7-1.4-8-5.8-8-10.8V6l8-3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m8.6 12.2 2.4 2.4 4.6-4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="brand-text">
+            <strong>Conformité</strong>
+            <small>Questionnaires sécurité</small>
+          </span>
+        </div>
+        <div id="auth-form"><div class="loader"><span class="spinner"></span></div></div>
+      </div>
+    </div>
+    <p class="auth-footnote">Traitement 100&nbsp;% local — aucune donnée ne quitte ce serveur.</p>
+  </div>
+
+  <div id="toast-root" class="toast-root"></div>
+  <script type="module" src="/static/js/login.js"></script>
+</body>
+</html>
