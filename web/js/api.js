@@ -65,6 +65,61 @@ function formatDetail(detail) {
   return JSON.stringify(detail);
 }
 
+/* ------------------------------------------------------------------ */
+/* Cache mémoire des lectures                                          */
+/* ------------------------------------------------------------------ */
+/* Revenir sur une page déjà visitée ne doit pas repayer l'aller-retour réseau :
+   la navigation paraît alors instantanée. Deux garde-fous contre le contenu
+   périmé : une durée de vie courte, et toute écriture qui vide tout — mieux
+   vaut une requête de plus qu'une liste qui ignore ce qu'on vient d'y créer. */
+const READ_TTL = 10_000;
+const reads = new Map();    // chemin complet → { at, payload }
+const pending = new Map();  // chemin complet → requête en vol
+
+function invalidate() {
+  reads.clear();
+}
+
+/* Reprendre la main sur l'onglet peut vouloir dire « j'ai été absent un
+   moment » : on repart du réseau plutôt que de servir une vue d'il y a dix
+   minutes restée en mémoire. */
+window.addEventListener('focus', invalidate);
+
+/* Les vues reçoivent une copie : deux d'entre elles peuvent lire la même entrée,
+   aucune ne doit pouvoir corrompre le cache en retouchant l'objet servi. */
+function copy(payload) {
+  return payload && typeof payload === 'object' ? structuredClone(payload) : payload;
+}
+
+function read(path) {
+  const hit = reads.get(path);
+  if (hit && Date.now() - hit.at < READ_TTL) return Promise.resolve(copy(hit.payload));
+
+  /* Deux demandes simultanées du même chemin ne partent qu'une fois : c'est ce
+     qui rend un survol qui préchauffe, suivi du clic, gratuit. */
+  const inFlight = pending.get(path);
+  if (inFlight) return inFlight.then(copy);
+
+  /* Le cache garde son propre exemplaire et rend l'original à l'appelant : les
+     vues retouchent couramment ce qu'elles ont reçu (fusion d'une réponse
+     PATCH dans la question affichée, par exemple), et ces retouches ne doivent
+     pas se retrouver servies au suivant. */
+  const promise = request('GET', path)
+    .then((payload) => {
+      reads.set(path, { at: Date.now(), payload: copy(payload) });
+      return payload;
+    })
+    .finally(() => pending.delete(path));
+
+  pending.set(path, promise);
+  return promise;
+}
+
+function write(method, path, body) {
+  invalidate();
+  return request(method, path, body);
+}
+
 function qs(params = {}) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -77,10 +132,11 @@ function qs(params = {}) {
 
 export const api = {
   qs,
-  get: (path, params) => request('GET', path + qs(params)),
-  post: (path, body) => request('POST', path, body),
-  put: (path, body) => request('PUT', path, body),
-  patch: (path, body) => request('PATCH', path, body),
-  del: (path) => request('DELETE', path),
-  upload: (path, formData) => request('POST', path, formData),
+  invalidate,
+  get: (path, params) => read(path + qs(params)),
+  post: (path, body) => write('POST', path, body),
+  put: (path, body) => write('PUT', path, body),
+  patch: (path, body) => write('PATCH', path, body),
+  del: (path) => write('DELETE', path),
+  upload: (path, formData) => write('POST', path, formData),
 };

@@ -1,28 +1,40 @@
-/* Sécurité du compte : activation et gestion du second facteur. */
+/* Sécurité du compte : état du second facteur et accès aux réglages.
+ *
+ * Les dialogues eux-mêmes vivent dans mfa.js — cette vue et le panneau de
+ * réglages y conduisent tous les deux.
+ */
 
 import { api } from '../api.js';
-import { copyText, esc, fmtDate, icon, modal, toast, withBusy } from '../ui.js';
+import { disableMfa, enrollMfa, regenerateMfaCodes } from '../mfa.js';
+import { openSettings } from '../account.js';
+import { esc, fmtDate, icon } from '../ui.js';
 
 export default async function security(node, ctx) {
   ctx.setCrumb([{ label: 'Sécurité du compte' }]);
-  ctx.setActions('');
+  ctx.setActions(`
+    <button class="btn" data-open-settings>${icon('sliders')}<span class="nowrap">Réglages du compte</span></button>`);
 
   const status = await api.get('/api/auth/status');
   ctx.setSession(status);
   draw(node, ctx, status);
+
+  document.querySelector('[data-open-settings]')
+    ?.addEventListener('click', () => openSettings(ctx, 'securite'));
 }
 
 function draw(node, ctx, status) {
   const enabled = status.mfa_enabled;
   const remaining = status.recovery_codes_remaining;
   const lowCodes = enabled && remaining <= 2;
+  const refresh = () => ctx.refresh();
 
   node.innerHTML = `
     <div class="page-head">
       <div>
+        <p class="eyebrow">${icon('lock')}Mon compte</p>
         <h1>Sécurité du compte</h1>
         <p class="sub">
-          Connecté en tant que <b>${esc(status.username)}</b>${status.is_admin ? ' · administrateur' : ''}.
+          Connecté en tant que <b>${esc(status.full_name || status.username)}</b>${status.is_admin ? ' · administrateur' : ''}.
         </p>
       </div>
     </div>
@@ -58,6 +70,20 @@ function draw(node, ctx, status) {
               </p>
             </div>
           </div>` : ''}
+
+        <div class="card">
+          <div class="card-head"><h2>Mot de passe et appareils</h2></div>
+          <div class="card-body">
+            <p class="muted">
+              Le changement de mot de passe et la liste des appareils connectés se règlent
+              dans le panneau du compte, accessible aussi depuis votre avatar en haut à droite.
+            </p>
+          </div>
+          <div class="card-foot" style="justify-content:flex-start">
+            <button class="btn" data-tab="securite">${icon('key')}Changer mon mot de passe</button>
+            <button class="btn" data-tab="sessions">${icon('devices')}Appareils connectés</button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -79,9 +105,11 @@ function draw(node, ctx, status) {
       </div>
     </div>`;
 
-  node.querySelector('[data-enable]')?.addEventListener('click', () => enrollDialog(ctx));
-  node.querySelector('[data-disable]')?.addEventListener('click', () => disableDialog(ctx));
-  node.querySelector('[data-regen]')?.addEventListener('click', () => regenerateDialog(ctx));
+  node.querySelector('[data-enable]')?.addEventListener('click', () => enrollMfa(ctx, refresh));
+  node.querySelector('[data-disable]')?.addEventListener('click', () => disableMfa(ctx, refresh));
+  node.querySelector('[data-regen]')?.addEventListener('click', () => regenerateMfaCodes(ctx, refresh));
+  node.querySelectorAll('[data-tab]').forEach((button) =>
+    button.addEventListener('click', () => openSettings(ctx, button.dataset.tab)));
 }
 
 function activeBlock(status, remaining) {
@@ -127,184 +155,4 @@ function method(iconName, title, text, available) {
         <p class="muted" style="font-size:.79rem;margin-top:2px">${esc(text)}</p>
       </div>
     </div>`;
-}
-
-/* ------------------------------------------------------------------ */
-/* Enrôlement                                                          */
-/* ------------------------------------------------------------------ */
-async function enrollDialog(ctx) {
-  let setup;
-  try {
-    setup = await api.post('/api/auth/mfa/totp/init');
-  } catch (error) {
-    toast('Impossible de démarrer la configuration', error.message, 'error');
-    return;
-  }
-
-  const dialog = modal({
-    title: 'Activer la vérification en deux étapes',
-    sub: 'Étape 1 sur 2 — associer votre application',
-    wide: true,
-    body: `
-      <div class="enroll">
-        <div class="enroll-qr">${setup.qr_svg}</div>
-        <div class="enroll-steps">
-          <p><b>1.</b> Ouvrez votre application d’authentification (Google Authenticator,
-             Microsoft Authenticator, Authy, 1Password…).</p>
-          <p class="mt-1"><b>2.</b> Scannez ce QR code.</p>
-          <details class="mt-1">
-            <summary class="small muted" style="cursor:pointer">Impossible de scanner ?</summary>
-            <p class="small muted mt-1">Saisissez cette clé manuellement dans l’application :</p>
-            <div class="secret-box mt-1">
-              <span class="mono">${esc(setup.secret)}</span>
-              <button class="icon-btn sm" data-copy-secret title="Copier">${icon('copy')}</button>
-            </div>
-          </details>
-          <p class="mt-2"><b>3.</b> Saisissez le code à 6 chiffres affiché :</p>
-          <div class="field mt-1">
-            <input class="input code-input" id="enroll-code" inputmode="numeric"
-                   autocomplete="one-time-code" maxlength="6" placeholder="000000">
-          </div>
-        </div>
-      </div>`,
-    foot: `
-      <button class="btn" data-close>Annuler</button>
-      <button class="btn primary" data-confirm>${icon('check')}Vérifier et activer</button>`,
-  });
-
-  const input = dialog.root.querySelector('#enroll-code');
-  input.addEventListener('input', () => {
-    input.value = input.value.replace(/\D/g, '').slice(0, 6);
-  });
-  setTimeout(() => input.focus(), 80);
-
-  dialog.root.querySelector('[data-copy-secret]').addEventListener('click', () =>
-    copyText(setup.secret.replace(/\s/g, '')));
-
-  dialog.root.querySelector('[data-confirm]').addEventListener('click', (event) =>
-    withBusy(event.currentTarget, async () => {
-      try {
-        const result = await api.post('/api/auth/mfa/totp/activate', { code: input.value });
-        dialog.close();
-        showRecoveryCodes(result.recovery_codes, ctx, true);
-      } catch (error) {
-        toast('Code refusé', error.message, 'error');
-        input.value = '';
-        input.focus();
-      }
-    }));
-}
-
-/* ------------------------------------------------------------------ */
-/* Codes de récupération                                               */
-/* ------------------------------------------------------------------ */
-function showRecoveryCodes(codes, ctx, isFirstTime) {
-  const text = codes.join('\n');
-  const dialog = modal({
-    title: isFirstTime ? 'Vérification activée' : 'Nouveaux codes de récupération',
-    sub: 'Étape 2 sur 2 — conservez ces codes maintenant',
-    body: `
-      <div class="callout danger">
-        ${icon('alert')}
-        <div>
-          <p><b>Ces codes ne seront plus jamais affichés.</b></p>
-          <p class="muted small mt-1">
-            Seules leurs empreintes sont conservées : personne, pas même un administrateur,
-            ne peut les retrouver. Sans eux et sans votre téléphone, votre accès devra être
-            rétabli par un administrateur.
-          </p>
-        </div>
-      </div>
-      <div class="recovery-grid">
-        ${codes.map((code) => `<span class="recovery-code mono">${esc(code)}</span>`).join('')}
-      </div>
-      <p class="muted small">
-        Chaque code ne fonctionne qu’une seule fois. Rangez-les dans votre gestionnaire de
-        mots de passe, ou imprimez-les et conservez-les hors de cet ordinateur.
-      </p>`,
-    foot: `
-      <button class="btn" data-copy-codes>${icon('copy')}Copier</button>
-      <button class="btn" data-download>${icon('download')}Télécharger</button>
-      <button class="btn primary" data-close>J’ai conservé mes codes</button>`,
-    onClose: () => ctx.refresh(),
-  });
-
-  dialog.root.querySelector('[data-copy-codes]').addEventListener('click', () => copyText(text));
-  dialog.root.querySelector('[data-download]').addEventListener('click', () => {
-    const header = 'Codes de récupération — Conformité GRC\n'
-      + `Compte : ${ctx.session?.username || ''}\n`
-      + 'Chaque code ne fonctionne qu\'une seule fois.\n\n';
-    const blob = new Blob([header + text + '\n'], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = Object.assign(document.createElement('a'), {
-      href: url, download: 'codes-recuperation-grc.txt',
-    });
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  });
-}
-
-function regenerateDialog(ctx) {
-  passwordPrompt({
-    title: 'Régénérer les codes de récupération',
-    message: 'Vos codes actuels seront immédiatement invalidés et remplacés par dix nouveaux.',
-    confirmLabel: 'Régénérer',
-    endpoint: '/api/auth/mfa/recovery/regenerate',
-    onSuccess: (result) => showRecoveryCodes(result.recovery_codes, ctx, false),
-  });
-}
-
-function disableDialog(ctx) {
-  passwordPrompt({
-    title: 'Désactiver la vérification en deux étapes ?',
-    message: 'Votre compte ne sera plus protégé que par son mot de passe. '
-      + 'Vos codes de récupération seront supprimés.',
-    confirmLabel: 'Désactiver',
-    endpoint: '/api/auth/mfa/disable',
-    danger: true,
-    onSuccess: () => {
-      toast('Vérification désactivée', 'Le compte n’est plus protégé que par son mot de passe.',
-        'warn', 6000);
-      ctx.refresh();
-    },
-  });
-}
-
-/* Confirmation par mot de passe : une session ouverte ne doit pas suffire à
-   retirer ou contourner le second facteur. */
-function passwordPrompt({ title, message, confirmLabel, endpoint, onSuccess, danger = false }) {
-  const dialog = modal({
-    title,
-    body: `
-      <p class="muted">${esc(message)}</p>
-      <div class="field">
-        <label for="pw-confirm">Confirmez avec votre mot de passe</label>
-        <input class="input" id="pw-confirm" type="password" autocomplete="current-password">
-      </div>`,
-    foot: `
-      <button class="btn" data-close>Annuler</button>
-      <button class="btn ${danger ? 'danger' : 'primary'}" data-confirm>${esc(confirmLabel)}</button>`,
-  });
-
-  const input = dialog.root.querySelector('#pw-confirm');
-  const submit = async (event) => {
-    await withBusy(event.currentTarget, async () => {
-      try {
-        const result = await api.post(endpoint, { password: input.value });
-        dialog.close();
-        onSuccess(result);
-      } catch (error) {
-        toast('Refusé', error.message, 'error');
-        input.value = '';
-        input.focus();
-      }
-    });
-  };
-
-  dialog.root.querySelector('[data-confirm]').addEventListener('click', submit);
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') dialog.root.querySelector('[data-confirm]').click();
-  });
 }

@@ -2,3 +2,21 @@
 __pycache__/
 .claude/
 *.pyc
+
+# Données d'exploitation — jamais dans le dépôt.
+# La base est reconstruite au démarrage (CREATE TABLE IF NOT EXISTS dans
+# app/db.py) et le premier compte se crée via l'écran d'installation : un clone
+# neuf n'a donc besoin d'aucun de ces fichiers pour fonctionner.
+#
+# Ce qu'ils contiennent, et qui n'a rien à faire sur un dépôt public :
+#   grc.db*          empreintes et sels de mots de passe, secrets TOTP, jetons
+#                    de session actifs, journal d'audit (IP, agents), dossiers
+#                    clients et réponses de conformité
+#   uploads/         questionnaires clients téléversés, en clair
+#   exports/         exports générés (journal d'audit, réponses)
+data/grc.db
+data/grc.db-wal
+data/grc.db-shm
+data/grc.db.*
+data/uploads/
+data/exports/

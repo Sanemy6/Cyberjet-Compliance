@@ -1,7 +1,9 @@
 /* Formulaires partagés : client, entrée de base de connaissance, configuration. */
 
 import { api } from './api.js';
-import { confirmDialog, debounce, esc, icon, modal, toast, withBusy } from './ui.js';
+import {
+  CLIENT_STATUSES, confirmDialog, debounce, esc, icon, modal, toast, withBusy,
+} from './ui.js';
 
 let metaCache = null;
 export async function meta() {
@@ -43,11 +45,13 @@ export async function clientForm(client, onSaved) {
         <label for="f-desc">Contexte et périmètre</label>
         <textarea class="textarea" id="f-desc" placeholder="Référentiels applicables, périmètre certifié, particularités…">${esc(client?.description || '')}</textarea>
       </div>
-      ${isEdit ? `
       <div class="field">
         <label for="f-status">Statut</label>
-        <select class="select" id="f-status">${options(['actif', 'archivé'], client.status)}</select>
-      </div>` : ''}`,
+        <select class="select" id="f-status">
+          ${options(CLIENT_STATUSES, client?.status || 'actif')}
+        </select>
+        <p class="dim small mt-1">Prospect : dossier ouvert avant signature du contrat.</p>
+      </div>`,
     foot: `
       <button class="btn" data-close>Annuler</button>
       <button class="btn primary" data-save>${icon('save')}${isEdit ? 'Enregistrer' : 'Créer le client'}</button>`,
@@ -61,7 +65,7 @@ export async function clientForm(client, onSaved) {
         country: value('f-country') || null,
         contact: value('f-contact') || null,
         description: value('f-desc') || null,
-        status: isEdit ? value('f-status') : 'actif',
+        status: value('f-status') || 'actif',
       };
       if (!payload.name) {
         toast('Nom obligatoire', 'Renseignez le nom du client.', 'warn');

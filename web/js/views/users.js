@@ -2,7 +2,7 @@
 
 import { api } from '../api.js';
 import {
-  confirmDialog, emptyState, esc, fmtDate, icon, modal, toast, withBusy,
+  confirmDialog, emptyState, esc, fmtDate, icon, initials, modal, toast, withBusy,
 } from '../ui.js';
 
 export default async function usersView(node, ctx) {
@@ -38,6 +38,7 @@ export default async function usersView(node, ctx) {
     node.innerHTML = `
       <div class="page-head">
         <div>
+          <p class="eyebrow">${icon('users')}Administration</p>
           <h1>Comptes</h1>
           <p class="sub">
             Qui peut se connecter à l’application. Toute personne connectée peut consulter
@@ -50,9 +51,9 @@ export default async function usersView(node, ctx) {
           <table class="tbl">
             <thead>
               <tr>
-                <th>Identifiant</th><th>Rôle</th><th>Statut</th>
+                <th>Personne</th><th>Adresse</th><th>Rôle</th><th>Statut</th>
                 <th>Second facteur</th>
-                <th>Créé le</th><th>Dernière connexion</th><th></th>
+                <th>Dernière connexion</th><th></th>
               </tr>
             </thead>
             <tbody>${list.map(row).join('')}</tbody>
@@ -66,7 +67,20 @@ export default async function usersView(node, ctx) {
     const isMe = u.username === ctx.session.username;
     return `
       <tr>
-        <td><strong>${esc(u.username)}</strong>${isMe ? ' <span class="badge outline">vous</span>' : ''}</td>
+        <td>
+          <div class="flex" style="gap:10px">
+            <span class="avatar sm">${esc(initials(u.full_name, u.username))}</span>
+            <div style="min-width:0">
+              <strong>${esc(u.full_name || u.username)}</strong>${isMe ? ' <span class="badge outline">vous</span>' : ''}
+              <div class="dim" style="font-size:.75rem">${esc(u.username)}</div>
+            </div>
+          </div>
+        </td>
+        <td class="small">
+          ${u.email
+            ? `<a href="mailto:${esc(u.email)}">${esc(u.email)}</a>`
+            : '<span class="dim">—</span>'}
+        </td>
         <td>${u.is_admin ? '<span class="badge accent">Administrateur</span>' : '<span class="badge">Membre</span>'}</td>
         <td>${u.active ? '<span class="badge ok">Actif</span>' : '<span class="badge outline">Désactivé</span>'}</td>
         <td>
@@ -74,8 +88,9 @@ export default async function usersView(node, ctx) {
             ? `<span class="badge ok"${u.mfa_enabled_at ? ` title="Activé le ${esc(fmtDate(u.mfa_enabled_at))}"` : ''}>${icon('shieldCheck')}Activé</span>`
             : '<span class="badge warn">Non activé</span>'}
         </td>
-        <td class="dim small">${esc(fmtDate(u.created_at))}</td>
-        <td class="dim small">${u.last_login_at ? esc(fmtDate(u.last_login_at, true)) : 'jamais'}</td>
+        <td class="dim small" title="Compte créé le ${esc(fmtDate(u.created_at))}">
+          ${u.last_login_at ? esc(fmtDate(u.last_login_at, true)) : 'jamais'}
+        </td>
         <td class="actions">
           ${u.mfa_enabled
             ? `<button class="icon-btn sm" data-mfa-reset="${u.id}"
@@ -146,10 +161,33 @@ function userForm(user, onSaved, ctx) {
     sub: isEdit ? user.username : 'Donnez accès à un collègue.',
     body: `
       <div class="field">
-        <label for="uf-name">Identifiant${isEdit ? '' : ' *'}</label>
+        <label for="uf-name">Identifiant de connexion${isEdit ? '' : ' *'}</label>
         <input class="input" id="uf-name" value="${esc(user?.username || '')}"
                ${isEdit ? 'disabled' : ''} minlength="3">
+        ${isEdit ? '<span class="help">Non modifiable : il sert de clé dans le journal d’audit.</span>' : ''}
       </div>
+      <div class="grid cols-2" style="gap:15px">
+        <div class="field">
+          <label for="uf-first">Prénom</label>
+          <input class="input" id="uf-first" maxlength="80" placeholder="Camille"
+                 value="${esc(user?.first_name || '')}">
+        </div>
+        <div class="field">
+          <label for="uf-last">Nom</label>
+          <input class="input" id="uf-last" maxlength="80" placeholder="Martin"
+                 value="${esc(user?.last_name || '')}">
+        </div>
+      </div>
+      <div class="field">
+        <label for="uf-mail">Adresse électronique</label>
+        <input class="input" id="uf-mail" type="email" maxlength="200"
+               placeholder="prenom.nom@exemple.fr" value="${esc(user?.email || '')}">
+      </div>
+      <p class="help" style="margin-top:-6px">
+        Nom et adresse servent à savoir qui contacter ; la personne complète ensuite
+        sa fiche elle-même (poste, téléphone). Aucun courriel n’est envoyé par
+        l’application.
+      </p>
       <div class="field">
         <label for="uf-pass">${isEdit ? 'Nouveau mot de passe (laisser vide pour ne pas changer)' : 'Mot de passe *'}</label>
         <input class="input" id="uf-pass" type="password" minlength="8" autocomplete="new-password">
@@ -176,10 +214,15 @@ function userForm(user, onSaved, ctx) {
     withBusy(event.currentTarget, async () => {
       const password = dialog.root.querySelector('#uf-pass').value;
       const isAdmin = dialog.root.querySelector('#uf-admin').checked;
+      const firstName = dialog.root.querySelector('#uf-first').value;
+      const lastName = dialog.root.querySelector('#uf-last').value;
+      const email = dialog.root.querySelector('#uf-mail').value;
 
       try {
         if (isEdit) {
-          const payload = {};
+          // Chaîne vide transmise volontairement : c'est ainsi qu'on efface une
+          // adresse ou un nom, le serveur la convertit en valeur nulle.
+          const payload = { email, first_name: firstName, last_name: lastName };
           if (!isSelf) {
             payload.is_admin = isAdmin;
             payload.active = dialog.root.querySelector('#uf-active').checked;
@@ -193,7 +236,10 @@ function userForm(user, onSaved, ctx) {
               'Identifiant (3 caractères min.) et mot de passe (8 caractères min.) requis.', 'warn');
             return;
           }
-          await api.post('/api/users', { username, password, is_admin: isAdmin });
+          await api.post('/api/users', {
+            username, password, is_admin: isAdmin, email,
+            first_name: firstName, last_name: lastName,
+          });
         }
         dialog.close();
         toast(isEdit ? 'Compte mis à jour' : 'Compte créé', '', 'ok');

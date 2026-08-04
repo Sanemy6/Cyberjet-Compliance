@@ -124,12 +124,41 @@ class UserIn(BaseModel):
     username: str = Field(min_length=3, max_length=60)
     password: str = Field(min_length=8, max_length=200)
     is_admin: bool = False
+    first_name: str | None = Field(default=None, max_length=80)
+    last_name: str | None = Field(default=None, max_length=80)
+    email: str | None = Field(default=None, max_length=200)
 
 
 class UserPatch(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=200)
     is_admin: bool | None = None
     active: bool | None = None
+    first_name: str | None = Field(default=None, max_length=80)
+    last_name: str | None = Field(default=None, max_length=80)
+    email: str | None = Field(default=None, max_length=200)
+
+
+class AccountProfileIn(BaseModel):
+    """Champs libres de la fiche. Chaîne vide = effacer, d'où `str | None`
+    partout plutôt qu'un `min_length`."""
+    first_name: str | None = Field(default=None, max_length=80)
+    last_name: str | None = Field(default=None, max_length=80)
+    job_title: str | None = Field(default=None, max_length=120)
+    email: str | None = Field(default=None, max_length=200)
+    phone: str | None = Field(default=None, max_length=40)
+
+
+class PreferencesIn(BaseModel):
+    theme: Literal["auto", "light", "dark"] | None = None
+    accent: Literal["azur", "indigo", "emeraude", "ardoise", "cuivre"] | None = None
+    density: Literal["confort", "compact"] | None = None
+    sidebar: Literal["expanded", "collapsed"] | None = None
+    motion: Literal["full", "reduced"] | None = None
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=8, max_length=200)
 
 
 class MfaCodeIn(BaseModel):
@@ -147,6 +176,17 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
+def _display_name(row: dict[str, Any]) -> str | None:
+    """Nom d'affichage recomposé, jamais stocké : une seule source de vérité.
+
+    Conservé sous la clé `full_name` dans les réponses parce que c'est ce que
+    l'interface consomme partout (avatar, accueil, table des comptes) ; côté
+    base, seuls `first_name` et `last_name` existent.
+    """
+    parts = [row["first_name"], row["last_name"]]
+    return " ".join(part.strip() for part in parts if part and part.strip()) or None
+
+
 def _public_user(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"]),
@@ -154,6 +194,43 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
         "last_login_at": row["last_login_at"],
         "mfa_enabled": bool(row["totp_enabled"]),
         "mfa_enabled_at": row["mfa_enabled_at"],
+        "email": row["email"], "phone": row["phone"], "job_title": row["job_title"],
+        "first_name": row["first_name"], "last_name": row["last_name"],
+        "full_name": _display_name(row),
+    }
+
+
+# Préférences d'interface : liste blanche stricte. Ce champ est réécrit tel quel
+# dans la page — accepter des clés arbitraires reviendrait à laisser un compte
+# stocker n'importe quoi dans la base sous couvert de « réglage ».
+_PREF_VALUES: dict[str, tuple[str, ...]] = {
+    "theme": ("auto", "light", "dark"),
+    "accent": ("azur", "indigo", "emeraude", "ardoise", "cuivre"),
+    "density": ("confort", "compact"),
+    "sidebar": ("expanded", "collapsed"),
+    "motion": ("full", "reduced"),
+}
+_PREF_DEFAULTS = {
+    "theme": "auto", "accent": "azur", "density": "confort",
+    "sidebar": "expanded", "motion": "full",
+}
+
+
+def _read_preferences(raw: str | None) -> dict[str, str]:
+    """Toujours renvoyer un jeu complet : une préférence absente ou devenue
+    invalide (valeur retirée du catalogue) retombe sur sa valeur par défaut,
+    plutôt que de remonter telle quelle jusqu'au CSS."""
+    stored: dict[str, Any] = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                stored = parsed
+        except (ValueError, TypeError):
+            stored = {}
+    return {
+        key: stored[key] if stored.get(key) in _PREF_VALUES[key] else default
+        for key, default in _PREF_DEFAULTS.items()
     }
 
 
@@ -169,11 +246,24 @@ def auth_status(request: Request) -> dict[str, Any]:
         "needs_setup": needs_setup,
         "authenticated": user is not None,
         "mfa_pending": pending is not None,
+        "user_id": user["id"] if user else None,
         "username": user["username"] if user else None,
         "is_admin": bool(user["is_admin"]) if user else False,
         "mfa_enabled": bool(user["totp_enabled"]) if user else False,
         "mfa_enabled_at": user["mfa_enabled_at"] if user else None,
         "recovery_codes_remaining": remaining,
+        # La fiche et les préférences voyagent avec le statut : le shell les
+        # applique au premier rendu, sans second aller-retour qui ferait
+        # clignoter l'avatar et le thème.
+        "email": user["email"] if user else None,
+        "phone": user["phone"] if user else None,
+        "full_name": _display_name(user) if user else None,
+        "first_name": user["first_name"] if user else None,
+        "last_name": user["last_name"] if user else None,
+        "job_title": user["job_title"] if user else None,
+        "created_at": user["created_at"] if user else None,
+        "last_login_at": user["last_login_at"] if user else None,
+        "preferences": _read_preferences(user["preferences"] if user else None),
     }
 
 
@@ -405,6 +495,195 @@ def mfa_regenerate_recovery(payload: PasswordConfirmIn, request: Request) -> dic
     return {"recovery_codes": codes}
 
 
+# --------------------------------------------------------------------------
+# Mon compte — fiche, préférences, mot de passe, sessions
+#
+# Tout ce qui suit porte sur le compte de la personne connectée : aucun de ces
+# endpoints ne prend d'identifiant en paramètre. La gestion des comptes des
+# autres reste sous /api/users et réservée aux administrateurs.
+# --------------------------------------------------------------------------
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
+
+
+def _clean_email(value: str | None) -> str | None:
+    """Chaîne vide comme None : effacer l'adresse est une opération légitime."""
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    if not _EMAIL_RE.match(trimmed):
+        raise HTTPException(422, "Adresse électronique invalide.")
+    return trimmed
+
+
+def _clean_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip() or None
+
+
+# Volontairement permissif : indicatifs, espaces, points, tirets, parenthèses.
+# Un contrôle strict des numéros internationaux refuserait des numéros
+# parfaitement valides — pour un champ de contact, ce serait pénible sans rien
+# protéger. On vérifie seulement qu'il y a des chiffres et pas de fantaisie.
+_PHONE_RE = re.compile(r"^\+?[\d\s().\-/]{6,40}$")
+
+
+def _clean_phone(value: str | None) -> str | None:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    if not _PHONE_RE.match(trimmed) or sum(c.isdigit() for c in trimmed) < 6:
+        raise HTTPException(422, "Numéro de téléphone invalide.")
+    return trimmed
+
+
+def _account_payload(conn, user: dict[str, Any], token: str | None) -> dict[str, Any]:
+    sessions = rows(
+        conn,
+        """SELECT token, created_at, expires_at FROM app_session
+           WHERE user_id = ? AND mfa_pending = 0 ORDER BY created_at DESC""",
+        (user["id"],),
+    )
+    row = one(conn, "SELECT * FROM app_user WHERE id = ?", (user["id"],)) or user
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "first_name": row["first_name"],
+        "last_name": row["last_name"],
+        "full_name": _display_name(row),
+        "email": row["email"],
+        "phone": row["phone"],
+        "job_title": row["job_title"],
+        "is_admin": bool(row["is_admin"]),
+        "created_at": row["created_at"],
+        "last_login_at": row["last_login_at"],
+        "mfa_enabled": bool(row["totp_enabled"]),
+        "mfa_enabled_at": row["mfa_enabled_at"],
+        "recovery_codes_remaining": auth_mod.recovery_codes_remaining(conn, row["id"]),
+        "preferences": _read_preferences(row["preferences"]),
+        # Le jeton lui-même ne sort jamais : seul « est-ce celle d'ici » compte.
+        "sessions": [
+            {"created_at": s["created_at"], "expires_at": s["expires_at"],
+             "current": bool(token) and s["token"] == token}
+            for s in sessions
+        ],
+    }
+
+
+@app.get("/api/account")
+def get_account(request: Request) -> dict[str, Any]:
+    user = request.state.user
+    token = request.cookies.get(auth_mod.SESSION_COOKIE)
+    with get_db() as conn:
+        return _account_payload(conn, user, token)
+
+
+@app.patch("/api/account")
+def update_account(payload: AccountProfileIn, request: Request) -> dict[str, Any]:
+    """Fiche du compte. L'identifiant de connexion, lui, n'est pas modifiable :
+    il sert de clé dans le journal d'audit, où réécrire l'histoire n'est pas
+    une option."""
+    user = request.state.user
+    token = request.cookies.get(auth_mod.SESSION_COOKIE)
+    fields = payload.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(400, "Aucune modification transmise.")
+
+    values: dict[str, Any] = {}
+    if "email" in fields:
+        values["email"] = _clean_email(fields["email"])
+    if "phone" in fields:
+        values["phone"] = _clean_phone(fields["phone"])
+    for key in ("first_name", "last_name", "job_title"):
+        if key in fields:
+            values[key] = _clean_text(fields[key])
+
+    changed = [key for key, value in values.items() if (user[key] or None) != value]
+    with get_db() as conn:
+        if changed:
+            assignments = ", ".join(f"{key} = ?" for key in values)
+            conn.execute(f"UPDATE app_user SET {assignments} WHERE id = ?",
+                         (*values.values(), user["id"]))
+            labels = {"email": "adresse", "phone": "téléphone", "first_name": "prénom",
+                      "last_name": "nom", "job_title": "intitulé de poste"}
+            audit.record(conn, "account.profile.updated", request=request,
+                         actor={"id": user["id"], "username": user["username"]},
+                         target_type="user", target_id=user["id"],
+                         target_label=user["username"],
+                         detail="Champs modifiés : "
+                                + ", ".join(labels[key] for key in changed))
+        return _account_payload(conn, user, token)
+
+
+@app.put("/api/account/preferences")
+def update_preferences(payload: PreferencesIn, request: Request) -> dict[str, str]:
+    """Réglages d'affichage. Volontairement hors journal d'audit : un thème
+    changé n'est pas un événement de sécurité, et noyer le journal sous ce
+    bruit lui ferait perdre sa valeur."""
+    user = request.state.user
+    with get_db() as conn:
+        row = one(conn, "SELECT preferences FROM app_user WHERE id = ?", (user["id"],))
+        merged = _read_preferences(row["preferences"] if row else None)
+        merged.update(payload.model_dump(exclude_none=True))
+        conn.execute("UPDATE app_user SET preferences = ? WHERE id = ?",
+                     (json.dumps(merged, ensure_ascii=False), user["id"]))
+    return merged
+
+
+@app.post("/api/account/password")
+def change_own_password(payload: PasswordChangeIn, request: Request) -> dict[str, Any]:
+    """Changement de mot de passe par son titulaire. Le mot de passe actuel est
+    exigé, et les autres sessions tombent : un jeton volé ne doit pas survivre
+    au changement censé le neutraliser."""
+    user = request.state.user
+    token = request.cookies.get(auth_mod.SESSION_COOKIE)
+    actor = {"id": user["id"], "username": user["username"]}
+
+    with get_db() as conn:
+        if not auth_mod.verify_password(
+                payload.current_password, user["password_salt"], user["password_hash"]):
+            audit.record(conn, "account.password.changed", request=request, actor=actor,
+                         outcome="failure", target_type="user", target_id=user["id"],
+                         target_label=user["username"],
+                         detail="Mot de passe actuel incorrect")
+            raise HTTPException(401, "Mot de passe actuel incorrect.")
+        if payload.new_password == payload.current_password:
+            raise HTTPException(422, "Le nouveau mot de passe doit être différent de l'actuel.")
+
+        salt, hashed = auth_mod.hash_password(payload.new_password)
+        conn.execute("UPDATE app_user SET password_hash = ?, password_salt = ? WHERE id = ?",
+                     (hashed, salt, user["id"]))
+        revoked = auth_mod.delete_user_sessions(conn, user["id"], keep_token=token)
+        audit.record(conn, "account.password.changed", request=request, actor=actor,
+                     target_type="user", target_id=user["id"], target_label=user["username"],
+                     detail=f"{revoked} autre(s) session(s) révoquée(s)")
+    return {"revoked_sessions": revoked}
+
+
+@app.post("/api/account/sessions/revoke")
+def revoke_other_sessions(payload: PasswordConfirmIn, request: Request) -> dict[str, Any]:
+    """Déconnecte partout ailleurs. Confirmé par mot de passe, comme tout ce qui
+    touche à l'accès au compte."""
+    user = request.state.user
+    token = request.cookies.get(auth_mod.SESSION_COOKIE)
+    actor = {"id": user["id"], "username": user["username"]}
+
+    with get_db() as conn:
+        if not auth_mod.verify_password(
+                payload.password, user["password_salt"], user["password_hash"]):
+            raise HTTPException(401, "Mot de passe incorrect.")
+        revoked = auth_mod.delete_user_sessions(conn, user["id"], keep_token=token)
+        audit.record(conn, "account.sessions.revoked", request=request, actor=actor,
+                     target_type="user", target_id=user["id"], target_label=user["username"],
+                     detail=f"{revoked} session(s) fermée(s) à distance")
+    return {"revoked_sessions": revoked}
+
+
 @app.get("/api/users")
 def list_users(request: Request) -> list[dict[str, Any]]:
     _require_admin(request)
@@ -425,9 +704,11 @@ def create_user(request: Request, payload: UserIn) -> dict[str, Any]:
         salt, hashed = auth_mod.hash_password(payload.password)
         cur = conn.execute(
             """INSERT INTO app_user (username, password_hash, password_salt, is_admin,
-                                     active, created_at)
-               VALUES (?, ?, ?, ?, 1, ?)""",
-            (payload.username.strip(), hashed, salt, int(payload.is_admin), now()),
+                                     active, created_at, email, first_name, last_name)
+               VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)""",
+            (payload.username.strip(), hashed, salt, int(payload.is_admin), now(),
+             _clean_email(payload.email), _clean_text(payload.first_name),
+             _clean_text(payload.last_name)),
         )
         audit.record(conn, "user.created", request=request, actor=request.state.user,
                      target_type="user", target_id=cur.lastrowid,
@@ -466,6 +747,15 @@ def patch_user(request: Request, user_id: int, payload: UserPatch) -> dict[str, 
         if payload.active is not None:
             fields.append("active = ?")
             params.append(int(payload.active))
+        if payload.email is not None:
+            fields.append("email = ?")
+            params.append(_clean_email(payload.email))
+        if payload.first_name is not None:
+            fields.append("first_name = ?")
+            params.append(_clean_text(payload.first_name))
+        if payload.last_name is not None:
+            fields.append("last_name = ?")
+            params.append(_clean_text(payload.last_name))
 
         if fields:
             params.append(user_id)
@@ -680,7 +970,8 @@ class ClientIn(BaseModel):
     country: str | None = None
     contact: str | None = None
     description: str | None = None
-    status: str = "actif"
+    # prospect = dossier ouvert avant signature du contrat.
+    status: Literal["prospect", "actif", "archivé"] = "actif"
 
 
 class KbIn(BaseModel):

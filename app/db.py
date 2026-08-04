@@ -133,7 +133,22 @@ CREATE TABLE IF NOT EXISTS app_user (
     totp_pending_secret TEXT,
     totp_enabled        INTEGER NOT NULL DEFAULT 0,
     totp_last_counter   INTEGER,
-    mfa_enabled_at      TEXT
+    mfa_enabled_at      TEXT,
+    -- Fiche du compte, tenue par la personne elle-même. Ni l'adresse ni le
+    -- téléphone ne servent à se connecter : ils disent qui contacter, et rien
+    -- de plus. Aucun courriel, aucun SMS n'est émis par l'application.
+    -- Prénom et nom sont deux colonnes distinctes : le nom d'affichage se
+    -- recompose toujours, l'inverse (couper « Jean-Pierre Le Guen » au bon
+    -- endroit) ne se devine pas.
+    first_name          TEXT,
+    last_name           TEXT,
+    email               TEXT,
+    phone               TEXT,
+    job_title           TEXT,
+    -- Préférences d'interface (thème, densité, barre latérale…) sérialisées en
+    -- JSON : suivre la personne d'un poste à l'autre demande le serveur, un
+    -- localStorage ne franchit pas la frontière du navigateur.
+    preferences         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS app_session (
@@ -235,6 +250,12 @@ MIGRATIONS: dict[str, dict[str, str]] = {
         "totp_enabled": "INTEGER NOT NULL DEFAULT 0",
         "totp_last_counter": "INTEGER",
         "mfa_enabled_at": "TEXT",
+        "first_name": "TEXT",
+        "last_name": "TEXT",
+        "email": "TEXT",
+        "phone": "TEXT",
+        "job_title": "TEXT",
+        "preferences": "TEXT",
     },
     "app_session": {
         # Session créée après le mot de passe mais avant le second facteur :
@@ -248,7 +269,31 @@ MIGRATIONS: dict[str, dict[str, str]] = {
 # une colonne morte finit toujours par semer le doute : on la supprime.
 REMOVED_COLUMNS: dict[str, tuple[str, ...]] = {
     "client": ("sector",),
+    # `full_name` a laissé place à `first_name` + `last_name` ; son contenu est
+    # repris par _backfill_names() juste avant la suppression.
+    "app_user": ("full_name",),
 }
+
+
+def _backfill_names(conn: sqlite3.Connection) -> None:
+    """Reprend l'ancien nom d'affichage unique dans les deux nouvelles colonnes.
+
+    Découpage au premier espace : « Jérémy Cheng » donne « Jérémy » + « Cheng ».
+    Un nom composé mal coupé reste corrigible à la main dans la fiche, alors
+    qu'une donnée perdue à la suppression de la colonne ne revient pas.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(app_user)")}
+    if not {"full_name", "first_name", "last_name"} <= columns:
+        return
+    rows_to_split = conn.execute(
+        """SELECT id, full_name FROM app_user
+           WHERE TRIM(COALESCE(full_name, '')) != ''
+             AND COALESCE(first_name, '') = '' AND COALESCE(last_name, '') = ''"""
+    ).fetchall()
+    for row in rows_to_split:
+        first, _, last = str(row["full_name"]).strip().partition(" ")
+        conn.execute("UPDATE app_user SET first_name = ?, last_name = ? WHERE id = ?",
+                     (first or None, last.strip() or None, row["id"]))
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
@@ -259,6 +304,11 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         for name, definition in columns.items():
             if name not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+    # Entre l'ajout et la suppression : les nouvelles colonnes existent, les
+    # anciennes n'ont pas encore disparu — le seul moment où la reprise est
+    # possible.
+    _backfill_names(conn)
 
     for table, names in REMOVED_COLUMNS.items():
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}

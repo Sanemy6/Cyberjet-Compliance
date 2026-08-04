@@ -2,7 +2,7 @@
 
 import { api } from '../api.js';
 import { clientForm } from '../forms.js';
-import { debounce, emptyState, esc, fmtNum, icon, truncate } from '../ui.js';
+import { clientStatusBadge, debounce, emptyState, esc, fmtNum, icon, truncate } from '../ui.js';
 
 export default async function clients(node, ctx) {
   ctx.setCrumb([{ label: 'Clients' }]);
@@ -45,7 +45,7 @@ export default async function clients(node, ctx) {
   node.querySelector('[data-search]').addEventListener('input', debounce((event) => {
     const term = event.target.value.trim().toLowerCase();
     const filtered = list.filter((c) =>
-      !term || [c.name, c.country, c.contact, c.description]
+      !term || [c.name, c.country, c.contact, c.description, c.status]
         .some((field) => (field || '').toLowerCase().includes(term)));
     listNode.innerHTML = filtered.length
       ? filtered.map(card).join('')
@@ -65,7 +65,7 @@ function card(client) {
           <div class="grow">
             <div class="flex between" style="gap:8px">
               <h3 class="truncate">${esc(client.name)}</h3>
-              ${client.status !== 'actif' ? '<span class="badge outline">Archivé</span>' : ''}
+              ${clientStatusBadge(client.status)}
             </div>
             ${[client.country, client.contact].filter(Boolean).length
               ? `<p class="dim small truncate">${[client.country, client.contact].filter(Boolean).map(esc).join(' · ')}</p>`

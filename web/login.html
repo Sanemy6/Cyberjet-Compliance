@@ -1,37 +1,125 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="auto">
+<html lang="fr" data-theme="light">
 <head>
   <meta charset="utf-8">
-  <script>
-    (function () {
-      var pref = localStorage.getItem('theme') || 'auto';
-      var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    })();
-  </script>
+  <!-- Page de connexion volontairement toujours en thème clair : le thème est
+       une préférence de compte, et personne n'est encore identifié ici. Aucun
+       script d'amorçage ne lit donc localStorage, et `data-theme="light"`
+       ci-dessus reste vrai en toutes circonstances. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="light dark">
-  <title>Connexion — Conformité</title>
+  <meta name="color-scheme" content="light">
+  <title>Connexion — Cyberjet Compliance</title>
   <link rel="stylesheet" href="/static/css/app.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231a6dd4'/><path d='M16 7l7 3v6c0 4.4-2.9 8.2-7 9.4-4.1-1.2-7-5-7-9.4v-6l7-3z' fill='white'/></svg>">
+  <style>
+    /* Premium modern styling for auth page (Light Theme Default) */
+    .auth-body {
+      background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 50%, #f0f4f8 100%);
+      background-size: 200% 200%;
+      animation: gradientFlow 10s ease infinite;
+      color: #0f1c2b;
+    }
+    
+    @keyframes gradientFlow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    
+    .auth-shell {
+      max-width: 420px;
+    }
+    
+    .auth-card {
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.5);
+      border-radius: 20px;
+    }
+    
+    .auth-brand {
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+    .auth-brand .brand-text strong {
+      font-size: 1.25rem;
+      letter-spacing: 0.5px;
+      color: #0f1c2b;
+    }
+    .auth-brand .brand-text small {
+      color: #64748b;
+    }
+    
+    .auth-brand .brand-mark {
+      background: linear-gradient(135deg, #1a68d1, #1354ac);
+      color: #ffffff;
+      border: none;
+      box-shadow: 0 4px 10px rgba(26, 104, 209, 0.3);
+    }
+    
+    #auth-form h1 {
+      text-align: center;
+      color: #0f1c2b;
+      font-weight: 600;
+    }
+    #auth-form .sub {
+      text-align: center;
+      color: #64748b;
+      margin-bottom: 2rem;
+    }
+    
+    .field label {
+      color: #475569 !important;
+    }
+    
+    .input {
+      background: rgba(255, 255, 255, 0.8) !important;
+      border: 1px solid rgba(0, 0, 0, 0.1) !important;
+      color: #0f1c2b !important;
+      border-radius: 10px !important;
+      padding: 12px 14px !important;
+      transition: all 0.2s ease !important;
+    }
+    
+    .input:focus {
+      border-color: #1a68d1 !important;
+      background: #ffffff !important;
+      box-shadow: 0 0 0 3px rgba(26, 104, 209, 0.15) !important;
+    }
+    
+    .btn.primary {
+      background: linear-gradient(135deg, #1a68d1, #1354ac) !important;
+      border: none !important;
+      border-radius: 10px !important;
+      padding: 12px 16px !important;
+      font-weight: 600 !important;
+      letter-spacing: 0.5px !important;
+      color: #ffffff !important;
+      box-shadow: 0 4px 12px rgba(26, 104, 209, 0.3) !important;
+      transition: transform 0.1s ease, box-shadow 0.2s ease !important;
+      margin-top: 10px;
+    }
+    .btn.primary:hover {
+      box-shadow: 0 6px 16px rgba(26, 104, 209, 0.4) !important;
+      transform: translateY(-1px) !important;
+    }
+  </style>
 </head>
 <body class="auth-body">
   <div class="auth-shell">
     <div class="card auth-card">
-      <div class="card-body">
-        <div class="auth-brand">
-          <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.5 20 6v6.2c0 5-3.3 9.4-8 10.8-4.7-1.4-8-5.8-8-10.8V6l8-3.5Z" fill="currentColor" opacity=".18"/><path d="M12 2.5 20 6v6.2c0 5-3.3 9.4-8 10.8-4.7-1.4-8-5.8-8-10.8V6l8-3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m8.6 12.2 2.4 2.4 4.6-4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </span>
-          <span class="brand-text">
-            <strong>Conformité</strong>
-            <small>Questionnaires sécurité</small>
+      <div class="card-body" style="padding: 40px 30px;">
+        <div class="auth-brand" style="flex-direction: column; align-items: center; gap: 15px;">
+          <img src="/static/img/cyberjet-logo.png" alt="Cyberjet Logo" style="height: 120px; width: auto;">
+          <span class="brand-text" style="text-align: center;">
+            <strong style="font-size: 1.4rem;">Cyberjet Compliance</strong>
           </span>
         </div>
         <div id="auth-form"><div class="loader"><span class="spinner"></span></div></div>
       </div>
     </div>
-    <p class="auth-footnote">Traitement 100&nbsp;% local — aucune donnée ne quitte ce serveur.</p>
   </div>
 
   <div id="toast-root" class="toast-root"></div>

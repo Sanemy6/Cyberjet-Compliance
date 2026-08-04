@@ -1,6 +1,10 @@
-/* Routeur, shell applicatif et gestion du thème. */
+/* Routeur de l'application. Tout ce qui entoure la vue — barre latérale, barre
+ * supérieure, menu du compte, palette de commandes — vit dans shell.js.
+ */
 
 import { api } from './api.js';
+import { applySession, closeSidebar, initShell } from './shell.js';
+import { hydratePrefs } from './prefs.js';
 import { esc, icon, toast } from './ui.js';
 import dashboard from './views/dashboard.js';
 import assistant from './views/assistant.js';
@@ -18,46 +22,6 @@ import auditView from './views/audit.js';
 const viewNode = document.getElementById('view');
 const crumbNode = document.getElementById('crumb');
 const actionsNode = document.getElementById('topbar-actions');
-const sidebar = document.getElementById('sidebar');
-const scrim = document.getElementById('scrim');
-
-/* ------------------------------------------------------------------ */
-/* Thème — « auto » est résolu ici pour ne garder qu'un bloc CSS sombre */
-/* ------------------------------------------------------------------ */
-const media = window.matchMedia('(prefers-color-scheme: dark)');
-
-function applyTheme() {
-  const preference = localStorage.getItem('theme') || 'auto';
-  const resolved = preference === 'auto' ? (media.matches ? 'dark' : 'light') : preference;
-  document.documentElement.dataset.theme = resolved;
-  document.documentElement.dataset.themePref = preference;
-  const label = document.querySelector('.theme-label');
-  if (label) {
-    label.textContent = { auto: 'Thème automatique', light: 'Thème clair', dark: 'Thème sombre' }[preference];
-  }
-}
-
-document.getElementById('theme-toggle').addEventListener('click', () => {
-  const order = ['auto', 'light', 'dark'];
-  const current = localStorage.getItem('theme') || 'auto';
-  localStorage.setItem('theme', order[(order.indexOf(current) + 1) % order.length]);
-  applyTheme();
-});
-media.addEventListener('change', applyTheme);
-applyTheme();
-
-/* ------------------------------------------------------------------ */
-/* Navigation mobile                                                    */
-/* ------------------------------------------------------------------ */
-function closeSidebar() {
-  sidebar.classList.remove('open');
-  scrim.hidden = true;
-}
-document.getElementById('burger').addEventListener('click', () => {
-  sidebar.classList.toggle('open');
-  scrim.hidden = !sidebar.classList.contains('open');
-});
-scrim.addEventListener('click', closeSidebar);
 
 /* ------------------------------------------------------------------ */
 /* Session — vérifiée avant le premier rendu ; la page de connexion et      */
@@ -76,40 +40,12 @@ async function bootstrapSession() {
     window.location.href = '/login';
     return false;
   }
+  // Les préférences du compte prennent le pas sur le cache local, qui peut
+  // appartenir à quelqu'un d'autre sur le même navigateur.
+  hydratePrefs(status.preferences);
   ctx.setSession(status);
   return true;
 }
-
-function applySessionToShell(status) {
-  const account = document.getElementById('sidebar-account');
-  if (account) {
-    account.hidden = false;
-    document.getElementById('sa-name').textContent = status.username;
-    document.getElementById('sa-avatar').textContent =
-      status.username.slice(0, 2).toUpperCase();
-  }
-  document.querySelectorAll('[data-admin-only]').forEach((node) => {
-    node.hidden = !status.is_admin;
-  });
-
-  // Pastille discrète tant que le second facteur n'est pas activé : incitation
-  // permanente, sans bloquer l'usage de l'application. Elle doit suivre les
-  // changements faits en cours de session, pas seulement l'état au chargement —
-  // d'où le passage systématique par ctx.setSession().
-  const alertDot = document.getElementById('mfa-alert');
-  if (alertDot) {
-    const low = status.mfa_enabled && status.recovery_codes_remaining <= 2;
-    alertDot.hidden = Boolean(status.mfa_enabled) && !low;
-    alertDot.title = low
-      ? `Plus que ${status.recovery_codes_remaining} code(s) de récupération`
-      : 'Vérification en deux étapes non activée';
-  }
-}
-
-document.getElementById('btn-logout').addEventListener('click', async () => {
-  try { await api.post('/api/auth/logout'); } catch { /* on se déconnecte quand même */ }
-  window.location.href = '/login';
-});
 
 /* ------------------------------------------------------------------ */
 /* Contexte offert aux vues                                            */
@@ -117,16 +53,22 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
 export const ctx = {
   session: null,
 
-  /* Toute vue qui modifie l'état du compte (activation du second facteur,
-     régénération des codes…) passe par ici : la barre latérale reflète alors
+  /* Toute vue qui modifie l'état du compte (fiche, second facteur, codes de
+     récupération…) passe par ici : la barre supérieure reflète alors
      immédiatement le nouvel état, sans attendre un rechargement de page. */
   setSession(status) {
     this.session = status;
-    applySessionToShell(status);
+    applySession(status);
   },
 
+  /* Le dernier maillon répète mot pour mot le <h1> de la page : on ne rend que
+     ses ancêtres, qui portent eux une vraie navigation (« Clients / Nordic
+     Wings » se réduit à un retour vers « Clients »). Les vues continuent de
+     passer le fil complet — c'est la barre supérieure qui décide de ce qu'elle
+     en montre, sans avoir à toucher chaque vue. */
   setCrumb(parts) {
     crumbNode.innerHTML = parts
+      .slice(0, -1)
       .map((part, i) => {
         const sep = i ? '<span class="sep">/</span>' : '';
         const label = part.href
@@ -172,20 +114,56 @@ function currentPath() {
   return { path: path || '/', query: new URLSearchParams(query || '') };
 }
 
+/* Apparition échelonnée des blocs de la vue. La classe est retirée sitôt
+   l'animation terminée : les rendus suivants d'une même vue (filtre saisi,
+   liste rechargée) ne doivent pas rejouer l'entrée à chaque frappe. */
+let enterTimer = null;
+function playEnter() {
+  clearTimeout(enterTimer);
+  viewNode.classList.remove('enter');
+  void viewNode.offsetWidth;
+  viewNode.classList.add('enter');
+  /* Marge courte au-dessus du cumul réel (.22s d'animation + .105s de décalage
+     maximum) : la classe doit disparaître dès la fin, sinon un rendu partiel
+     déclenché juste après rejouerait l'entrée. */
+  enterTimer = setTimeout(() => viewNode.classList.remove('enter'), 450);
+}
+
+/* Le temps de réponse de l'API locale se compte en dizaines de millisecondes.
+   Vider la vue puis y poser un spinner aussitôt retiré se lit comme un
+   clignotement, et une page qui clignote paraît plus lente qu'une page qui
+   attend un instant sans bouger. On ne montre donc le spinner que si la réponse
+   se fait vraiment attendre ; en dessous, la vue précédente reste à l'écran
+   jusqu'au remplacement. Le retour immédiat, c'est la surbrillance du menu, qui
+   bascule avant le moindre appel réseau. */
+const LOADER_GRACE = 150;
+
+/* Deux clics rapprochés lancent deux rendus concurrents. Sans repère, le plus
+   lent écrit après le plus rapide et c'est la page abandonnée qui s'affiche. */
+let generation = 0;
+
 async function render() {
   const { path, query } = currentPath();
   const match = ROUTES.map((route) => ({ route, m: route.pattern.exec(path) }))
     .find((entry) => entry.m);
+  const mine = ++generation;
 
   document.querySelectorAll('.nav-item').forEach((item) =>
     item.classList.toggle('active', item.dataset.route === match?.route.name));
 
   actionsNode.innerHTML = '';
-  viewNode.innerHTML = '<div class="loader"><span class="spinner"></span></div>';
+  viewNode.classList.remove('enter');
   window.scrollTo({ top: 0 });
   closeSidebar();
 
+  const spinner = setTimeout(() => {
+    if (mine === generation) {
+      viewNode.innerHTML = '<div class="loader"><span class="spinner"></span></div>';
+    }
+  }, LOADER_GRACE);
+
   if (!match) {
+    clearTimeout(spinner);
     ctx.setCrumb([{ label: 'Page introuvable' }]);
     viewNode.innerHTML = `
       <div class="empty">
@@ -200,8 +178,11 @@ async function render() {
   try {
     const params = match.m.slice(1);
     await match.route.view(viewNode, ctx, { params, query });
+    if (mine !== generation) return;
+    playEnter();
   } catch (error) {
     console.error(error);
+    if (mine !== generation) return;
     viewNode.innerHTML = `
       <div class="empty">
         ${icon('xCircle')}
@@ -210,8 +191,14 @@ async function render() {
         <button class="btn" onclick="location.reload()">Recharger</button>
       </div>`;
     toast('Erreur', error.message || String(error), 'error');
+  } finally {
+    /* La vue a rendu (ou échoué) : le spinner différé n'a plus lieu d'être, même
+       si le délai n'est pas encore écoulé. C'est ce `clearTimeout` qui garantit
+       qu'une navigation rapide n'en voit jamais la couleur. */
+    clearTimeout(spinner);
   }
 }
 
+initShell(ctx);
 window.addEventListener('hashchange', render);
 bootstrapSession().then((ok) => { if (ok) render(); });

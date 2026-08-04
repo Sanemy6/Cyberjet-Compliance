@@ -4,8 +4,8 @@ import { api } from '../api.js';
 import { clientForm, configForm, deleteKb, kbForm } from '../forms.js';
 import { configGroups, coverageList, kbCard, questionnaireRow } from '../components.js';
 import {
-  confirmByTyping, confirmDialog, copyText, debounce, emptyState, esc, fmtNum,
-  icon, toast,
+  clientStatusBadge, confirmByTyping, confirmDialog, copyText, debounce, emptyState,
+  esc, fmtNum, icon, toast,
 } from '../ui.js';
 import { uploadDialog } from './questionnaires.js';
 
@@ -37,7 +37,10 @@ export default async function clientDetail(node, ctx, route) {
   node.innerHTML = `
     <div class="page-head">
       <div>
-        <h1>${esc(client.name)}</h1>
+        <div class="flex wrap" style="align-items:center;gap:10px">
+          <h1>${esc(client.name)}</h1>
+          ${clientStatusBadge(client.status)}
+        </div>
         ${[client.country, client.contact].filter(Boolean).length
           ? `<p class="sub">${[client.country, client.contact].filter(Boolean).map(esc).join(' · ')}</p>`
           : ''}

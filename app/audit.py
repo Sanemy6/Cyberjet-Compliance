@@ -56,6 +56,10 @@ EVENTS: dict[str, str] = {
     "user.role.changed": "Droits d'administration modifiés",
     "user.deactivated": "Compte désactivé",
     "user.reactivated": "Compte réactivé",
+    # Fiche et sessions du compte, tenues par la personne elle-même
+    "account.profile.updated": "Fiche du compte modifiée",
+    "account.password.changed": "Mot de passe changé par son titulaire",
+    "account.sessions.revoked": "Autres sessions déconnectées",
     # Données métier
     "client.created": "Client créé",
     "client.updated": "Client modifié",
@@ -78,6 +82,7 @@ EVENTS: dict[str, str] = {
 CATEGORIES: dict[str, str] = {
     "auth": "Authentification",
     "mfa": "Second facteur",
+    "account": "Mon compte",
     "user": "Comptes",
     "client": "Clients",
     "kb": "Base de connaissance",

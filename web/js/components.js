@@ -31,7 +31,6 @@ export function kbCard(entry, { showClient = true } = {}) {
           ${showClient ? scope : ''}
           <span class="badge outline">${esc(entry.category)}</span>
           ${kbStatusBadge(entry.status)}
-          ${entry.usage_count ? `<span class="badge accent" title="Nombre de réutilisations validées">${icon('refresh')}${entry.usage_count}×</span>` : ''}
           ${controlChips(entry.controls)}
         </div>
         ${entry.evidence || entry.tags ? `
