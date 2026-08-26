@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <script>
+    /* Préférences d'affichage appliquées avant le premier pixel. Les lire depuis
+       le serveur suffirait, mais l'aller-retour se verrait : thème clair qui
+       bascule en sombre, barre latérale qui se replie sous les yeux. Le serveur
+       reste la source de vérité et corrige ce cache au chargement du shell. */
+    (function () {
+      var root = document.documentElement;
+      var get = function (key, fallback) {
+        try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
+      };
+      var theme = get('theme', 'auto');
+      var dark = theme === 'dark'
+        || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.dataset.theme = dark ? 'dark' : 'light';
+      root.dataset.themePref = theme;
+      root.dataset.accent = get('accent', 'azur');
+      root.dataset.density = get('density', 'confort');
+      root.dataset.motion = get('motion', 'full');
+      root.dataset.rail = get('sidebar', 'expanded') === 'collapsed' ? '1' : '0';
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Cyberjet Compliance — Réponse aux questionnaires sécurité</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231a6dd4'/><path d='M16 7l7 3v6c0 4.4-2.9 8.2-7 9.4-4.1-1.2-7-5-7-9.4v-6l7-3z' fill='white'/></svg>">
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

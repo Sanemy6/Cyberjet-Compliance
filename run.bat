@@ -1,47 +1,50 @@
 @echo off
 setlocal
+
+REM ===========================================================================
+REM  Cyberjet Compliance — lancement en production locale
+REM
+REM  Compile l'interface React dans wwwroot, puis démarre l'API ASP.NET Core
+REM  qui sert à la fois le JSON et l'interface. Une seule adresse, un seul
+REM  processus : c'est ce qui est déployé sur le serveur.
+REM
+REM  Pour développer, préférez run-dev.bat : il garde le rechargement à chaud.
+REM ===========================================================================
+
 cd /d "%~dp0"
-chcp 65001 >nul
 
-set "PY=.venv\Scripts\python.exe"
-
-if not exist "%PY%" (
-    echo Premiere execution : creation de l'environnement virtuel...
-    python -m venv .venv
-    if errorlevel 1 (
-        echo.
-        echo Python est introuvable. Installez Python 3.11 ou superieur, puis relancez.
-        pause
-        exit /b 1
-    )
-    "%PY%" -m pip install --upgrade pip --quiet
-    echo Installation des dependances...
-    "%PY%" -m pip install -r requirements.txt --quiet
-    if errorlevel 1 (
-        echo Echec de l'installation des dependances.
-        pause
-        exit /b 1
-    )
+where dotnet >nul 2>&1
+if errorlevel 1 (
+    echo [ERREUR] Le SDK .NET est introuvable.
+    echo Installez .NET SDK 9 : https://dotnet.microsoft.com/download
+    exit /b 1
 )
 
-if "%~1"=="--demo" (
-    echo Chargement du jeu de demonstration...
-    "%PY%" -m app.seed_demo
-    echo.
+where npm >nul 2>&1
+if errorlevel 1 (
+    echo [ERREUR] Node.js est introuvable.
+    echo Installez Node.js 20 LTS ou plus recent : https://nodejs.org
+    exit /b 1
 )
 
-for /f "delims=" %%i in ('"%PY%" -c "import socket;print(socket.gethostbyname(socket.gethostname()))" 2^>nul') do set LANIP=%%i
+echo.
+echo === Interface ===
+pushd client
+if not exist node_modules (
+    echo Installation des dependances npm ^(premiere fois, environ une minute^)...
+    call npm ci
+    if errorlevel 1 ( popd & exit /b 1 )
+)
+call npm run build
+if errorlevel 1 ( popd & exit /b 1 )
+popd
 
 echo.
-echo   Application de conformite
-echo   Sur ce poste     : http://127.0.0.1:8077
-if defined LANIP echo   Depuis le reseau : http://%LANIP%:8077
-echo.
-echo   Premiere ouverture : un compte administrateur vous sera demande.
-echo   Fermez cette fenetre ou appuyez sur Ctrl+C pour arreter.
+echo === API ===
+echo L'application sera disponible sur http://localhost:5080
+echo Fermez cette fenetre ou faites Ctrl+C pour arreter.
 echo.
 
-start "" http://127.0.0.1:8077
-"%PY%" -m uvicorn app.main:app --host 0.0.0.0 --port 8077
+dotnet run --project server\Cyberjet.Api --configuration Release --urls http://0.0.0.0:5080
 
 endlocal

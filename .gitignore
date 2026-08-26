@@ -1,22 +1,68 @@
-.venv/
-__pycache__/
-.claude/
-*.pyc
+# ---------------------------------------------------------------------------
+# .NET
+# ---------------------------------------------------------------------------
+bin/
+obj/
+*.user
+.vs/
 
+# Interface compilée : produite par `npm run build`, jamais versionnée.
+server/Cyberjet.Api/wwwroot/
+
+# Paquet de déploiement produit par `dotnet publish` — voir README, section
+# « Déploiement ». Il est régénéré à la demande, jamais versionné.
+/publish/
+
+# ---------------------------------------------------------------------------
+# Node
+# ---------------------------------------------------------------------------
+node_modules/
+client/dist/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Outils
+# ---------------------------------------------------------------------------
+.claude/
+
+# ---------------------------------------------------------------------------
 # Données d'exploitation — jamais dans le dépôt.
-# La base est reconstruite au démarrage (CREATE TABLE IF NOT EXISTS dans
-# app/db.py) et le premier compte se crée via l'écran d'installation : un clone
-# neuf n'a donc besoin d'aucun de ces fichiers pour fonctionner.
 #
-# Ce qu'ils contiennent, et qui n'a rien à faire sur un dépôt public :
-#   grc.db*          empreintes et sels de mots de passe, secrets TOTP, jetons
-#                    de session actifs, journal d'audit (IP, agents), dossiers
-#                    clients et réponses de conformité
+# Le schéma SQL Server est appliqué au démarrage de l'API et le premier compte
+# se crée via l'écran d'installation : un clone neuf n'a besoin d'aucun de ces
+# fichiers pour fonctionner.
+#
+# grc.db* est la base SQLite de l'ancienne version de l'application (retirée
+# du dépôt, voir historique Git) : elle reste ici comme unique source pour la
+# reprise ponctuelle des données via tools/Cyberjet.Migration, jusqu'à ce que
+# cette reprise soit faite. Aucun code ne dépend plus de SQLite.
+#
+# Ce que ces fichiers contiennent, et qui n'a rien à faire sur un dépôt :
+#   grc.db*          empreintes et sels de mots de passe, secrets TOTP, journal
+#                    d'audit (IP, agents), dossiers clients et réponses de
+#                    conformité
 #   uploads/         questionnaires clients téléversés, en clair
 #   exports/         exports générés (journal d'audit, réponses)
+# ---------------------------------------------------------------------------
 data/grc.db
 data/grc.db-wal
 data/grc.db-shm
 data/grc.db.*
 data/uploads/
 data/exports/
+
+# Stockage de l'API. Le dossier s'appelle App_Data et non data : sur un système
+# de fichiers insensible à la casse, une règle « server/Cyberjet.Api/data/ »
+# exclurait aussi « server/Cyberjet.Api/Data/ », c'est-à-dire quatre fichiers
+# source du back-end. Ce piège a réellement été rencontré.
+server/Cyberjet.Api/App_Data/
+
+# Secrets locaux : chaîne de connexion d'un serveur nommé, compte SQL dédié…
+server/Cyberjet.Api/appsettings.Local.json
+
+# Sauvegardes (tools/backup.ps1). Elles vont par défaut hors du dépôt, dans
+# C:\Sauvegardes\Cyberjet ; ces règles couvrent le cas d'un -Destination pointé
+# ici par mégarde. Une archive de la base porte les dossiers clients, les
+# empreintes de mots de passe et les secrets TOTP : rien qui doive être versionné.
+*.bak
+Sauvegardes/
