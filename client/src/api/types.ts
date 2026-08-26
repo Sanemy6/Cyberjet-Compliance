@@ -62,6 +62,7 @@ export interface AuthStatus {
  *  au catalogue tenu côté serveur (AppSettingsService.DashboardWidgetKeys). */
 export type DashboardWidgetKey =
   | 'coverage' | 'kpi-clients' | 'kpi-kb' | 'kpi-questionnaires' | 'kpi-frameworks'
+  | 'kpi-kb-validated'
   | 'next-step' | 'recent-questionnaires' | 'by-category' | 'top-kb';
 
 /** Largeurs disponibles sur la grille à 12 colonnes — doivent correspondre à

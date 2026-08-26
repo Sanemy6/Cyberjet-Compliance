@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -432,25 +432,6 @@ export function DashboardPage() {
                             onRemove={() => moveTo(key, 'library')}
                             onResize={size => resize(key, size)} />
         ))}
-
-        {/* Emplacement libre, en pointillés : la cible pour un widget qu'on
-            fait venir de la bibliothèque sans viser un widget précis à
-            échanger. Pleine largeur et hors du calcul dense (dash-w--full,
-            pas dash-w--sm) : une case de taille normale entrerait dans le
-            même recasage automatique que les widgets et déciderait à leur
-            place où ils atterrissent, ce qui rendait le tableau de bord
-            visiblement différent entre lecture et édition — précisément le
-            bug signalé. En pleine largeur elle ne fait jamais concurrence à
-            une case libre ailleurs dans la grille : dense la pousse
-            mécaniquement en tout dernier, sans toucher au reste. */}
-        {editing && (
-          <div className={`dash-w dash-w--full dash-slot${overKey === 'library' ? ' over' : ''}`}
-               data-drop-library>
-            <span className="flex" style={{ gap: 6 }}>
-              <Icon name="plus" /><span className="dim small">Déposer ici</span>
-            </span>
-          </div>
-        )}
       </div>
 
       {editing && hiddenOrder.length > 0 && (
@@ -464,7 +445,10 @@ export function DashboardPage() {
                      onPointerDown={beginDrag(key, true)}
                      onDoubleClick={() => addFromLibrary(key)}
                      title="Glisser vers la grille, ou double-cliquer pour l’ajouter en fin de page">
-                  <Icon name={meta.icon} />{meta.label}
+                  <span className="dash-library-item-frame" aria-hidden="true">
+                    <WidgetContent widgetKey={key} stats={stats} />
+                  </span>
+                  <span className="dash-library-item-label"><Icon name={meta.icon} />{meta.label}</span>
                 </div>
               );
             })}
@@ -503,6 +487,7 @@ const WIDGET_META: Record<DashboardWidgetKey, {
   'kpi-kb': { icon: 'book', label: 'Réponses en base', defaultSize: 'sm', tall: false },
   'kpi-questionnaires': { icon: 'fileText', label: 'Questionnaires ouverts', defaultSize: 'sm', tall: false },
   'kpi-frameworks': { icon: 'shieldCheck', label: 'Référentiels couverts', defaultSize: 'sm', tall: false },
+  'kpi-kb-validated': { icon: 'checkCircle', label: 'Réponses validées', defaultSize: 'sm', tall: false },
   'next-step': { icon: 'wand', label: 'Prochaine étape', defaultSize: 'full', tall: false },
   'recent-questionnaires': { icon: 'clock', label: 'Questionnaires récents', defaultSize: 'lg', tall: true },
   'by-category': { icon: 'layoutGrid', label: 'Répartition par domaine', defaultSize: 'sm', tall: true },
@@ -623,6 +608,17 @@ function WidgetContent({ widgetKey, stats }: { widgetKey: DashboardWidgetKey; st
       return <Stat label="Référentiels couverts" value={fmtNum(stats.frameworks)} icon="shieldCheck"
                    hint={`${fmtNum(stats.controls)} contrôles répertoriés`} />;
 
+    case 'kpi-kb-validated': {
+      // Fiabilité de la base, pas sa taille : kbTotal mesure combien de
+      // réponses existent, celui-ci mesure combien ont été relues et
+      // confirmées par une personne — deux questions différentes, l'une
+      // n'est pas déductible de l'autre depuis le seul widget « Réponses en
+      // base ».
+      const rate = stats.kbTotal ? stats.kbValidated / stats.kbTotal : 0;
+      return <Stat label="Réponses validées" value={fmtPct(rate)} icon="checkCircle"
+                   hint={`${fmtNum(stats.kbValidated)} sur ${fmtNum(stats.kbTotal)} réponses relues`} />;
+    }
+
     case 'next-step':
       return <NextStep stats={stats} />;
 
@@ -738,33 +734,35 @@ function CoveragePanel({ stats }: { stats: Stats }) {
   return (
     <div className="hero-panel">
       <p className="label">Taux de réponse automatique</p>
-      <div className="flex" style={{ alignItems: 'baseline', gap: 14, margin: '8px 0 16px', flexWrap: 'wrap' }}>
-        <span className="hero-figure">{fmtPct(stats.coverage)}</span>
-        <span className="muted small" style={{ maxWidth: '34ch' }}>
-          {stats.questionsTotal
-            ? `${fmtNum(stats.questionsAnswered)} ${plural(stats.questionsAnswered, 'question')} `
-              + `sur ${fmtNum(stats.questionsTotal)} ont reçu une proposition issue de la base`
-            : 'Aucune question traitée pour l’instant'}
-        </span>
-      </div>
 
-      <div className={`progress lg ${tone}`} role="img"
-           aria-label={`Couverture ${fmtPct(stats.coverage)}`}>
-        <span style={{ width: `${Math.round(stats.coverage * 100)}%` }} />
+      <div className="coverage-ring-row mt-2">
+        <CoverageRing value={stats.coverage} tone={tone} />
+        <div className="coverage-ring-side">
+          <p className="muted small" style={{ margin: 0 }}>
+            {stats.questionsTotal
+              ? `${fmtNum(stats.questionsAnswered)} ${plural(stats.questionsAnswered, 'question')} `
+                + `sur ${fmtNum(stats.questionsTotal)} ont reçu une proposition issue de la base`
+              : 'Aucune question traitée pour l’instant'}
+          </p>
+          {stats.questionsTotal > 0 && (
+            <dl className="coverage-ring-stats">
+              <div>
+                <dt>Validées</dt>
+                <dd>
+                  {fmtNum(stats.questionsValidated)} ({fmtPct(validationRate)})
+                </dd>
+              </div>
+              <div>
+                <dt>Contrôles couverts</dt>
+                <dd>{fmtNum(stats.controls)} sur {fmtNum(stats.frameworks)} référentiels</dd>
+              </div>
+            </dl>
+          )}
+        </div>
       </div>
 
       {stats.questionsTotal ? (
         <>
-          <div className="flex between mt-2 small muted" style={{ flexWrap: 'wrap', gap: 8 }}>
-            <span>
-              {fmtNum(stats.questionsValidated)} {plural(stats.questionsValidated, 'réponse')}
-              {' '}{plural(stats.questionsValidated, 'validée')} ({fmtPct(validationRate)})
-            </span>
-            <span>
-              {fmtNum(stats.controls)} contrôles sur {fmtNum(stats.frameworks)} référentiels
-            </span>
-          </div>
-
           <div style={{ borderTop: '1px solid var(--border)', margin: '18px 0 15px' }} />
 
           <p className="label">État des {fmtNum(stats.questionsTotal)} questions traitées</p>
@@ -782,6 +780,36 @@ function CoveragePanel({ stats }: { stats: Stats }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Jauge circulaire : même sémantique de couleur que .progress (piste = pas
+ *  plus clair de la MÊME rampe, teinte de sévérité une fois qu'il y a de la
+ *  donnée), rendue en arc plutôt qu'en barre — le chiffre directeur vit au
+ *  centre de l'anneau au lieu d'à côté, ce qui rapproche visuellement la
+ *  mesure de sa représentation. Un seul anneau, jamais un double anneau
+ *  concentrique : rien ici n'a deux mesures à porter à la fois. */
+function CoverageRing({ value, tone }: { value: number; tone: '' | 'ok' | 'warn' | 'danger' }) {
+  const size = 108;
+  const stroke = 11;
+  const r = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(1, value));
+
+  return (
+    <div className={`coverage-ring ${tone}`} role="img" aria-label={`Couverture ${fmtPct(value)}`}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
+           style={{ '--ring-circumference': circumference } as CSSProperties}>
+        <circle className="ring-track" cx={size / 2} cy={size / 2} r={r}
+                strokeWidth={stroke} fill="none" />
+        <circle className="ring-fill" cx={size / 2} cy={size / 2} r={r}
+                strokeWidth={stroke} fill="none"
+                strokeDasharray={circumference}
+                strokeDashoffset={circumference * (1 - pct)}
+                transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      </svg>
+      <span className="coverage-ring-figure">{fmtPct(value)}</span>
     </div>
   );
 }

@@ -773,6 +773,12 @@ kbd {
   border-radius: var(--r-lg); padding: var(--pad);
   box-shadow: var(--ring), var(--shadow);
   display: flex; flex-direction: column; gap: 5px;
+  /* Centré verticalement plutôt que collé en haut : sur le tableau de bord
+     personnalisable, un widget « Stat » peut recevoir une case bien plus
+     haute que son contenu (grand format choisi par un administrateur) —
+     sans ce centrage, le peu de texte reste en haut et laisse un vide nu en
+     dessous plutôt que d'occuper la place qu'on lui a donnée. */
+  justify-content: center;
   position: relative; overflow: hidden;
   transition: box-shadow var(--dur), transform var(--dur) var(--ease);
 }
@@ -1029,6 +1035,56 @@ a.row-item:hover::before, .row-item.clickable:hover::before { opacity: 1; }
 .progress.danger { background: var(--danger-soft); }
 .progress.danger > span { background: var(--danger); }
 
+/* Jauge circulaire : même logique de couleur que .progress ci-dessus (piste
+   = pas plus clair de la MÊME rampe, teinte de sévérité une fois qu'il y a
+   de la donnée), en arc plutôt qu'en barre. L'anneau s'anime au premier
+   rendu — stroke-dashoffset part de « vide » puis se remplit — plutôt que
+   d'apparaître déjà rempli, ce qui donne à la mesure un poids qu'un simple
+   texte statique n'a pas. */
+.coverage-ring-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.coverage-ring { position: relative; flex: none; width: 108px; height: 108px; }
+/* Le système d'icônes du projet impose `svg { width:18px; height:18px;
+   fill:none; stroke-width:1.7 }` (voir la règle globale) — sans cette
+   surcharge explicite, cette jauge héritait ces valeurs pensées pour de
+   petits pictogrammes et s'affichait minuscule, avec un trait cassé plutôt
+   qu'un anneau plein. */
+.coverage-ring svg {
+  width: 108px; height: 108px;
+  transform: scaleX(-1); /* l'arc grandit dans le sens horaire depuis midi */
+}
+.coverage-ring circle { fill: none; stroke-width: 11px; }
+.ring-track { stroke: var(--viz-1-track); }
+.ring-fill {
+  stroke: var(--viz-1); stroke-linecap: round;
+  animation: coverage-ring-in 1s var(--ease) both;
+}
+.coverage-ring.ok .ring-track { stroke: color-mix(in srgb, var(--viz-ok) 18%, var(--surface)); }
+.coverage-ring.ok .ring-fill { stroke: var(--viz-ok); }
+.coverage-ring.warn .ring-track { stroke: var(--warn-soft); }
+.coverage-ring.warn .ring-fill { stroke: var(--warn); }
+.coverage-ring.danger .ring-track { stroke: var(--danger-soft); }
+.coverage-ring.danger .ring-fill { stroke: var(--danger); }
+@keyframes coverage-ring-in {
+  from { stroke-dashoffset: var(--ring-circumference, 0); }
+}
+.coverage-ring-figure {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 1.3rem; font-weight: 670; letter-spacing: -.02em; color: var(--text);
+  font-variant-numeric: normal;
+}
+.coverage-ring-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1 1 220px; }
+.coverage-ring-stats {
+  display: flex; flex-direction: column; gap: 6px; margin: 0;
+}
+.coverage-ring-stats > div { display: flex; align-items: baseline; gap: 8px; justify-content: space-between; }
+.coverage-ring-stats dt {
+  font-size: .78rem; color: var(--text-3);
+}
+.coverage-ring-stats dd {
+  margin: 0; font-size: .82rem; font-weight: 600; color: var(--text-2);
+  font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap;
+}
+
 /* Barres horizontales de magnitude : une seule teinte pour toutes les barres —
    la longueur porte déjà la valeur, inutile de la redoubler par la couleur. */
 .bar-list { display: flex; flex-direction: column; gap: 11px; }
@@ -1039,12 +1095,20 @@ a.row-item:hover::before, .row-item.clickable:hover::before { opacity: 1; }
            gap: 10px; align-items: center; }
 .bar-row .bar-label { font-size: .82rem; color: var(--text-2);
                       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-row .bar-track { height: 10px; border-radius: 4px; background: var(--viz-1-track); }
-.bar-row .bar-fill { height: 100%; border-radius: 0 4px 4px 0; background: var(--viz-1);
-                     display: block; transition: width .5s var(--ease); }
+.bar-row .bar-track { height: 10px; border-radius: 4px; background: var(--viz-1-track); overflow: hidden; }
+/* Dégradé tone-on-tone (même teinte, pas un second hue) : donne du relief au
+   remplissage sans dupliquer l'information de magnitude que la longueur
+   porte déjà — la règle du magnitude-en-une-seule-teinte reste respectée. */
+.bar-row .bar-fill {
+  height: 100%; border-radius: 0 4px 4px 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--viz-1) 82%, transparent), var(--viz-1));
+  display: block; transform-origin: left; transition: width .5s var(--ease);
+  animation: bar-fill-in .6s var(--ease) both;
+}
 .bar-row .bar-value { font-size: .8rem; font-variant-numeric: tabular-nums;
                       color: var(--text-2); min-width: 34px; text-align: right; }
 .bar-row:hover .bar-label { color: var(--text); }
+@keyframes bar-fill-in { from { transform: scaleX(0); } }
 
 .meter-row { display: flex; align-items: center; gap: 11px; }
 .meter-row .progress { flex: 1; }
@@ -1588,8 +1652,17 @@ a.row-item:hover::before, .row-item.clickable:hover::before { opacity: 1; }
    fait qu'y regarder les chiffres. */
 .dash-w {
   position: relative;
+  display: flex; flex-direction: column; /* voir la règle suivante */
   transition: outline-color var(--dur), opacity var(--dur), transform var(--dur), box-shadow var(--dur);
 }
+/* Le contenu réel (.stat, .card, …) doit occuper toute la cellule de grille
+   que la taille choisie lui donne, pas seulement sa hauteur intrinsèque —
+   sinon un widget réglé sur « Large » ou « Pleine largeur » laisse un grand
+   vide sous son contenu, qui reste à la taille d'un widget « Petit ». Ciblé
+   sur l'enfant direct plutôt que sur chaque classe de contenu au cas par
+   cas (.stat, .card, …), pour que ça marche aussi pour un futur type de
+   widget sans y penser. */
+.dash-w > * { flex: 1 1 auto; min-width: 0; }
 .dash-edit .dash-w {
   outline: 2px dashed var(--border-strong); outline-offset: 4px; border-radius: var(--r-lg);
   cursor: grab; touch-action: none;
@@ -1707,17 +1780,6 @@ a.row-item:hover::before, .row-item.clickable:hover::before { opacity: 1; }
 }
 .dash-size-preview-frame .card { height: 100%; box-shadow: none; border: none; }
 
-/* Case vide, pointillés : la cible explicite d'un widget déplacé depuis la
-   bibliothèque, à un endroit précis de la grille plutôt qu'en fin de liste
-   seulement. */
-.dash-slot {
-  border: 2px dashed var(--border-strong); border-radius: var(--r-lg);
-  display: grid; place-items: center;
-  min-height: 64px; color: var(--text-3); font-size: .78rem;
-  transition: border-color var(--dur), background var(--dur), color var(--dur);
-}
-.dash-slot.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-
 /* Bandeau d'édition en tête de page : rappelle qu'on modifie une vue
    commune à tout le monde, pas un brouillon personnel. */
 .dash-edit-bar {
@@ -1796,17 +1858,37 @@ a.row-item:hover::before, .row-item.clickable:hover::before { opacity: 1; }
   color: var(--text-3); margin: 0 0 10px;
 }
 .dash-library-grid {
-  display: flex; flex-wrap: wrap; gap: 10px;
+  display: flex; flex-wrap: wrap; gap: 12px;
 }
+/* Carte de bibliothèque : le vrai contenu du widget en aperçu réduit,
+   plutôt qu'une simple icône + libellé — c'est la même logique que
+   SizePreview dans le menu de taille, appliquée ici pour qu'on sache à quoi
+   ressemble un widget avant de le remettre dans la grille, pas seulement
+   son nom. */
 .dash-library-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 9px 13px; border-radius: var(--r-sm);
+  display: flex; flex-direction: column; gap: 8px; width: 176px;
+  padding: 8px; border-radius: var(--r-md);
   background: var(--surface-2); border: 1px dashed var(--border-strong);
-  color: var(--text-2); font-size: .82rem; cursor: grab; touch-action: none;
+  color: var(--text-2); cursor: grab; touch-action: none;
+  transition: border-color var(--dur), background var(--dur);
 }
-.dash-library-item:hover { border-color: var(--accent); color: var(--text); }
+.dash-library-item:hover { border-color: var(--accent); background: var(--surface); }
 .dash-library-item.dragging { cursor: grabbing; opacity: .5; border-color: var(--accent); }
-.dash-library-item svg { width: 15px; height: 15px; }
+.dash-library-item-frame {
+  display: block; height: 78px; border-radius: var(--r-sm);
+  background: var(--surface); border: 1px solid var(--border);
+  overflow: hidden; pointer-events: none;
+}
+.dash-library-item-frame > * {
+  display: block; width: 400%; height: 400%;
+  transform: scale(.25); transform-origin: top left;
+}
+.dash-library-item-label {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .8rem; font-weight: 550; color: var(--text-2);
+}
+.dash-library-item:hover .dash-library-item-label { color: var(--text); }
+.dash-library-item-label svg { width: 14px; height: 14px; flex: none; }
 
 /* Avertissement d'inactivité. Plus étroit qu'une modale ordinaire : il ne
    porte qu'une phrase et deux boutons, et n'a pas de croix de fermeture —

@@ -132,7 +132,7 @@ public sealed class AppSettingsService(
     public static readonly IReadOnlyList<string> DashboardWidgetKeys =
     [
         "coverage", "kpi-clients", "kpi-kb", "kpi-questionnaires", "kpi-frameworks",
-        "next-step", "recent-questionnaires", "by-category", "top-kb",
+        "kpi-kb-validated", "next-step", "recent-questionnaires", "by-category", "top-kb",
     ];
 
     /// <summary>Largeurs acceptées pour un widget, sur une grille à douze
