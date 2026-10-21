@@ -20,7 +20,7 @@
     </PackageReference>
 
     <!-- Documentation interactive de l'API -->
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
 
     <!-- Lecture / écriture des questionnaires -->
     <PackageReference Include="ClosedXML" Version="0.104.2" />
