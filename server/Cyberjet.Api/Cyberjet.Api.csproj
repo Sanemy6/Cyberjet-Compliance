@@ -24,7 +24,7 @@
 
     <!-- Lecture / écriture des questionnaires -->
     <PackageReference Include="ClosedXML" Version="0.104.2" />
-    <PackageReference Include="DocumentFormat.OpenXml" Version="3.2.0" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageReference Include="PdfPig" Version="0.1.9" />
 
     <!-- QR code d'enrôlement du second facteur, en SVG, sans dépendance graphique -->
