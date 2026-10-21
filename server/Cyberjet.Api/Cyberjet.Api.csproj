@@ -28,7 +28,7 @@
     <PackageReference Include="PdfPig" Version="0.1.9" />
 
     <!-- QR code d'enrôlement du second facteur, en SVG, sans dépendance graphique -->
-    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
 
     <!-- Windows-1252 : encodage des CSV exportés depuis un Excel francophone -->
     <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.0" />
